@@ -2961,6 +2961,11 @@ def build_parser():
     sync_status_parser = subparsers.add_parser("sync-status", help="Show local queue and retention stats")
     sync_status_parser._category = "Cloud"
 
+    demo_parser = subparsers.add_parser("demo", help="Scaffold a runnable example design in the current folder")
+    demo_parser._category = "Cloud"
+    demo_parser.add_argument("--path", type=str, default=None, help="Where to write the demo (default: ./gli-demo)")
+    demo_parser.add_argument("--force", action="store_true", help="Overwrite existing demo files")
+
     return parser
 
 
@@ -2970,7 +2975,7 @@ def main():
     args = parser.parse_args()
 
     # Skip wizard for basic help/config commands if they are being used to disable it
-    _skip_wizard_commands = {None, "help", "login", "logout", "whoami", "sync", "sync-status"}
+    _skip_wizard_commands = {None, "help", "login", "logout", "whoami", "sync", "sync-status", "demo"}
     if args.command not in _skip_wizard_commands and not (args.command == "telemetry" and args.telemetry_command in ["disable", "mode"]):
         # Pass non-interactive status to telemetry consent
         try:
@@ -3051,6 +3056,9 @@ def main():
     elif args.command == "sync-status":
         from gli_flow.cli.auth_commands import sync_status_command as _sync_status
         _sync_status(args)
+    elif args.command == "demo":
+        from gli_flow.cli.demo_command import demo_command as _demo
+        _demo(args)
     else:
         print_banner()
         show_first_run_guide = _load_config().get("first_run_notice_shown", False) is False

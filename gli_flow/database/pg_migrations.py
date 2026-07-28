@@ -577,6 +577,9 @@ class PGMigrationEngine:
         # columns, RLS). Idempotent; safe to re-run on every migrate().
         from gli_flow.database import pg_migrations_phase1_multitenant as phase1
         phase1.apply(self)
+        # Phase 2: admin flag + profile (is_admin, full_name, profile_complete).
+        from gli_flow.database import pg_migrations_phase2_admin as phase2
+        phase2.apply(self)
 
     def validate_table_exists(self, schema: str, table: str) -> bool:
         conn = self._get_conn()

@@ -42,24 +42,41 @@ def _pg(config: CloudIngestionConfig):
     return psycopg2.connect(config.database.url)
 
 
+def _admin_emails():
+    raw = os.environ.get("GLI_ADMIN_EMAILS", "")
+    return {e.strip().lower() for e in raw.split(",") if e.strip()}
+
+
 def _ensure_app_user(conn, user: SupabaseUser) -> None:
     """Upsert the caller into app_users on every JWT-verified request.
 
     This is the seam between Supabase's auth.users and our public.app_users
     mirror — we don't need a database trigger, we just sync on demand.
+
+    Also re-asserts admin status from GLI_ADMIN_EMAILS on every login, so
+    adding an email to that env var promotes them on their next request.
     """
+    is_admin = (user.email or "").strip().lower() in _admin_emails()
     with conn, conn.cursor() as cur:
         cur.execute(
             """
-            INSERT INTO app_users (id, email, display_name, last_login_at)
-            VALUES (%s, %s, %s, NOW())
+            INSERT INTO app_users (id, email, display_name, last_login_at, is_admin)
+            VALUES (%s, %s, %s, NOW(), %s)
             ON CONFLICT (id) DO UPDATE
               SET email = EXCLUDED.email,
                   last_login_at = NOW(),
-                  updated_at = NOW()
+                  updated_at = NOW(),
+                  is_admin = app_users.is_admin OR EXCLUDED.is_admin
             """,
-            (user.id, user.email or f"{user.id}@unknown", user.email or ""),
+            (user.id, user.email or f"{user.id}@unknown", user.email or "", is_admin),
         )
+
+
+def _is_admin(conn, user_id: str) -> bool:
+    with conn.cursor() as cur:
+        cur.execute("SELECT is_admin FROM app_users WHERE id = %s", (user_id,))
+        row = cur.fetchone()
+        return bool(row and row[0])
 
 
 def _gen_token() -> str:
@@ -99,6 +116,10 @@ class DeviceApproveIn(BaseModel):
 
 class TokenCreateIn(BaseModel):
     name: str = "CLI token"
+
+
+class ProfileIn(BaseModel):
+    full_name: str
 
 
 class TokenRevokeIn(BaseModel):
@@ -347,6 +368,161 @@ def build_router(config: CloudIngestionConfig) -> APIRouter:
         finally:
             conn.close()
         return {"status": "revoked"}
+
+    # ---------- Profile (name capture on first login) ----------
+
+    @router.get("/api/v1/profile")
+    def profile_get(user: SupabaseUser = Depends(require_supabase_user)):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT email, display_name, full_name, profile_complete, is_admin "
+                    "FROM app_users WHERE id = %s",
+                    (user.id,),
+                )
+                row = cur.fetchone()
+        finally:
+            conn.close()
+        if not row:
+            raise HTTPException(status_code=404, detail="User not found")
+        return {
+            "user_id": user.id,
+            "email": row[0],
+            "display_name": row[1],
+            "full_name": row[2],
+            "profile_complete": bool(row[3]),
+            "is_admin": bool(row[4]),
+        }
+
+    @router.post("/api/v1/profile")
+    def profile_set(
+        body: ProfileIn,
+        user: SupabaseUser = Depends(require_supabase_user),
+    ):
+        name = (body.full_name or "").strip()
+        if not name:
+            raise HTTPException(status_code=400, detail="Name cannot be empty")
+        if len(name) > 120:
+            name = name[:120]
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn, conn.cursor() as cur:
+                cur.execute(
+                    "UPDATE app_users SET full_name = %s, display_name = %s, "
+                    "profile_complete = TRUE, updated_at = NOW() WHERE id = %s",
+                    (name, name, user.id),
+                )
+        finally:
+            conn.close()
+        return {"status": "ok", "full_name": name, "profile_complete": True}
+
+    # ---------- Admin (master user: view everyone) ----------
+
+    @router.get("/api/v1/admin/users")
+    def admin_users(user: SupabaseUser = Depends(require_supabase_user)):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            if not _is_admin(conn, user.id):
+                raise HTTPException(status_code=403, detail="Admin only")
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        u.id, u.email, u.full_name, u.display_name,
+                        u.is_admin, u.created_at, u.last_login_at,
+                        COALESCE(rc.run_count, 0) AS run_count,
+                        COALESCE(ec.event_count, 0) AS event_count,
+                        rc.last_run_at
+                    FROM app_users u
+                    LEFT JOIN (
+                        SELECT user_id,
+                               COUNT(DISTINCT run_id) AS run_count,
+                               MAX(ingested_at) AS last_run_at
+                        FROM ingestion.telemetry_events
+                        GROUP BY user_id
+                    ) rc ON rc.user_id = u.id
+                    LEFT JOIN (
+                        SELECT user_id, COUNT(*) AS event_count
+                        FROM ingestion.telemetry_events
+                        GROUP BY user_id
+                    ) ec ON ec.user_id = u.id
+                    WHERE u.is_active = TRUE
+                    ORDER BY rc.last_run_at DESC NULLS LAST, u.created_at DESC
+                    """,
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        return {
+            "users": [
+                {
+                    "user_id": str(r[0]),
+                    "email": r[1],
+                    "full_name": r[2],
+                    "display_name": r[3],
+                    "is_admin": bool(r[4]),
+                    "created_at": r[5].isoformat() if r[5] else None,
+                    "last_login_at": r[6].isoformat() if r[6] else None,
+                    "run_count": int(r[7] or 0),
+                    "event_count": int(r[8] or 0),
+                    "last_run_at": r[9].isoformat() if r[9] else None,
+                }
+                for r in rows
+            ]
+        }
+
+    @router.get("/api/v1/admin/runs")
+    def admin_runs(
+        limit: int = 200,
+        user: SupabaseUser = Depends(require_supabase_user),
+    ):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            if not _is_admin(conn, user.id):
+                raise HTTPException(status_code=403, detail="Admin only")
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        te.run_id,
+                        te.user_id,
+                        u.email,
+                        u.full_name,
+                        MAX(te.design_name) FILTER (WHERE te.design_name IS NOT NULL) AS design_name,
+                        BOOL_OR(te.event = 'run_completed') AS completed,
+                        COUNT(*) FILTER (WHERE te.event = 'stage_completed') AS stages,
+                        MAX(te.ingested_at) AS last_seen
+                    FROM ingestion.telemetry_events te
+                    JOIN app_users u ON u.id = te.user_id
+                    GROUP BY te.run_id, te.user_id, u.email, u.full_name
+                    ORDER BY MAX(te.ingested_at) DESC
+                    LIMIT %s
+                    """,
+                    (min(max(limit, 1), 2000),),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        return {
+            "runs": [
+                {
+                    "run_id": r[0],
+                    "user_id": str(r[1]),
+                    "user_email": r[2],
+                    "user_name": r[3],
+                    "design_name": r[4] or "unknown",
+                    "completed": bool(r[5]),
+                    "stages_completed": int(r[6] or 0),
+                    "last_seen": r[7].isoformat() if r[7] else None,
+                }
+                for r in rows
+            ]
+        }
 
     # ---------- Runs (per-user summary for the dashboard) ----------
 

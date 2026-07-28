@@ -409,7 +409,15 @@ def build_router(config: CloudIngestionConfig) -> APIRouter:
 
     @router.get("/runs/{run_id}/trust-score")
     def trust_score(run_id: str, user: SupabaseUser = Depends(require_supabase_user)):
-        return {"trust_score": 0.5, "confidence": "unverified", "run_id": run_id}
+        # Shape matches what RunDetail's SummaryTab reads.
+        return {
+            "run_id": run_id,
+            "trust_ratio": 1.0,
+            "verified_count": 0,
+            "heuristic_count": 0,
+            "unverified_count": 0,
+            "confidence": "unverified",
+        }
 
     @router.get("/runs/{run_id}/investigation")
     def get_investigation(run_id: str, user: SupabaseUser = Depends(require_supabase_user)):

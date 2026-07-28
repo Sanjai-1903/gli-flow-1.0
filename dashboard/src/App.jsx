@@ -39,6 +39,7 @@ import BetaDashboardPage from "./BetaDashboardPage"
 import RunStar from "./components/RunStar"
 import { trackEvent } from "./lib/telemetry"
 import OnboardingCard from "./OnboardingCard.jsx"
+import AccountMenu from "./AccountMenu.jsx"
 
 const API_BASE = import.meta.env.VITE_API_URL || ""
 const POLL_MS = parseInt(import.meta.env.VITE_POLL_INTERVAL || "2000", 10)
@@ -456,7 +457,7 @@ function App() {
                 </span>
               )}
             </div>
-            <Settings size={20} className="text-[#6B7280] cursor-pointer" />
+            <AccountMenu />
             <div className="flex items-center gap-2 border border-stone-ridge bg-white rounded-full px-3 py-1">
               <span className={`w-2 h-2 rounded-full ${isConnected ? "bg-[#22C55E]" : "bg-topography-rust animate-pulse"} ${liveRuns.length > 0 ? "pulse-dot" : ""}`} />
               <span className="text-[11px] font-[Work_Sans] text-abyss-ink whitespace-nowrap">

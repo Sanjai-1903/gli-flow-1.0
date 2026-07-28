@@ -1,0 +1,56 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "gli-flow"
+version = "1.1.0b0"
+description = "Reproducible RTL-to-GDS silicon pipeline with cloud telemetry — Green Lantern Industries"
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "Apache-2.0" }
+authors = [{ name = "Green Lantern Industries", email = "team@gatelevel.io" }]
+keywords = ["eda", "asic", "rtl", "gds", "silicon", "openroad", "vlsi"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Electronic Design Automation (EDA)",
+]
+dependencies = [
+    "rich>=13.7.0",
+    "pyyaml>=6.0.0",
+    "jinja2>=3.1.0",
+    "tabulate>=0.9.0",
+    "httpx>=0.27.0",
+]
+
+[project.urls]
+Homepage = "https://github.com/Sanjai-1903/gli-flow-1.0"
+Repository = "https://github.com/Sanjai-1903/gli-flow-1.0"
+
+[project.optional-dependencies]
+install = ["distro>=1.8.0", "volare>=0.18.0"]
+cloud = ["boto3>=1.28.0", "google-cloud-storage>=2.10.0"]
+dashboard = ["fastapi>=0.104.0", "uvicorn[standard]>=0.24.0", "pydantic>=2.0.0"]
+dev = ["pytest>=7.0.0", "pytest-cov>=4.0.0", "ruff>=0.1.0"]
+
+[project.scripts]
+gli-flow = "gli_flow.cli.main:main"
+
+[tool.setuptools]
+# Explicit package discovery so we don't accidentally ship the whole tree.
+packages = { find = { include = ["gli_flow*", "failure_atlas*", "provenance*"] } }
+
+[tool.setuptools.package-data]
+gli_flow = ["py.typed", "templates/**/*", "pdk/**/*.yaml", "pdk/**/*.json"]
+failure_atlas = ["**/*.json"]
+
+# Bundle the example designs so `gli-flow run examples/counter --mock`
+# works immediately after `pip install gli-flow`.
+"gli_flow.examples" = ["**/*"]

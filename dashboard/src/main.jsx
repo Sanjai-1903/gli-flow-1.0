@@ -5,16 +5,22 @@
 //   /               -> App              (legacy full dashboard — Runs, QoR, Failures…)
 //   /welcome        -> HomePage         (signed-in landing + install steps)
 //   /tokens         -> CliTokensPage    (manage CLI Bearer tokens)
+//   /admin          -> AdminPage        (master users only)
 //   /cli/device     -> DeviceApprovalPage (device-flow approval)
+//
+// AuthGate  = must be signed in (Google).
+// ProfileGate = must have entered their name (first-login capture).
 
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import App from './App.jsx'
 import AuthGate from './AuthGate.jsx'
+import ProfileGate from './ProfileGate.jsx'
 import HomePage from './HomePage.jsx'
 import CliTokensPage from './CliTokensPage.jsx'
 import DeviceApprovalPage from './DeviceApprovalPage.jsx'
+import AdminPage from './AdminPage.jsx'
 import { installLegacyFetch } from './lib/legacy-fetch.js'
 
 // Install the global fetch shim BEFORE any component mounts so that
@@ -22,35 +28,32 @@ import { installLegacyFetch } from './lib/legacy-fetch.js'
 // with the signed-in user's Bearer token.
 installLegacyFetch()
 
+function Gated({ children, skipProfile = false }) {
+  // Device approval must load fast and doesn't need the profile gate.
+  if (skipProfile) return <AuthGate>{children}</AuthGate>
+  return (
+    <AuthGate>
+      <ProfileGate>{children}</ProfileGate>
+    </AuthGate>
+  )
+}
+
 function Root() {
   const path = window.location.pathname
 
   if (path === '/cli/device') {
-    return (
-      <AuthGate>
-        <DeviceApprovalPage />
-      </AuthGate>
-    )
+    return <Gated skipProfile><DeviceApprovalPage /></Gated>
   }
   if (path === '/tokens' || path === '/settings/tokens') {
-    return (
-      <AuthGate>
-        <CliTokensPage />
-      </AuthGate>
-    )
+    return <Gated><CliTokensPage /></Gated>
+  }
+  if (path === '/admin') {
+    return <Gated><AdminPage /></Gated>
   }
   if (path === '/welcome' || path === '/home') {
-    return (
-      <AuthGate>
-        <HomePage />
-      </AuthGate>
-    )
+    return <Gated><HomePage /></Gated>
   }
-  return (
-    <AuthGate>
-      <App />
-    </AuthGate>
-  )
+  return <Gated><App /></Gated>
 }
 
 createRoot(document.getElementById('root')).render(
