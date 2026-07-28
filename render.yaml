@@ -1,0 +1,12 @@
+services:
+  - type: web
+    name: gli-flow-ingest
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    healthCheckPath: /api/v1/health
+    envVars:
+      - key: GLI_DATABASE_URL
+        sync: false
+      - key: PORT
+        value: 8100

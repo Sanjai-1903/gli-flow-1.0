@@ -1,0 +1,6 @@
+{
+  "_comment": "Unused. The dashboard lives in /dashboard/ (existing Vite React app). Delete this folder: rm -rf web/",
+  "name": "unused-placeholder",
+  "version": "0.0.0",
+  "private": true
+}
