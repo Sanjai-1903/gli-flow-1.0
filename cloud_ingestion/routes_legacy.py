@@ -569,4 +569,234 @@ def build_router(config: CloudIngestionConfig) -> APIRouter:
     def regressions(user: SupabaseUser = Depends(require_supabase_user)):
         return []
 
+    # -----------------------------------------------------------------
+    # /telemetry/health  — real-ish, from the user's uploads
+    # -----------------------------------------------------------------
+    @router.get("/telemetry/health")
+    def telemetry_health(user: SupabaseUser = Depends(require_supabase_user)):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*), MAX(ingested_at) FROM ingestion.telemetry_events WHERE user_id = %s",
+                    (user.id,),
+                )
+                total_events, last_event = cur.fetchone()
+                cur.execute(
+                    "SELECT COUNT(*) FROM ingestion.telemetry_events "
+                    "WHERE user_id = %s AND ingested_at::date = NOW()::date",
+                    (user.id,),
+                )
+                (events_today,) = cur.fetchone()
+                cur.execute(
+                    "SELECT COUNT(*), MAX(ingested_at) FROM ingestion.upload_audit WHERE user_id = %s",
+                    (user.id,),
+                )
+                total_uploads, last_upload = cur.fetchone()
+                cur.execute(
+                    "SELECT COUNT(*) FROM ingestion.failure_atlas_events WHERE user_id = %s",
+                    (user.id,),
+                )
+                (dataset_entries,) = cur.fetchone()
+        finally:
+            conn.close()
+        return {
+            "overall_status": "HEALTHY" if total_events else "NO_DATA",
+            "detail": "",
+            "collected_events": int(total_events or 0),
+            "events_today": int(events_today or 0),
+            "queued_events": 0,
+            "dataset_entries": int(dataset_entries or 0),
+            "resolution_patterns": 0,
+            "open_escalations": 0,
+            "blocked_fields": [],
+            "average_upload_latency_ms": 0,
+            "checked_at": datetime.utcnow().isoformat(),
+            "last_event_time": last_event.isoformat() if last_event else None,
+            "last_upload_time": last_upload.isoformat() if last_upload else None,
+            "last_sanitization_time": None,
+            "total_uploads": int(total_uploads or 0),
+            "recent_events": [],
+        }
+
+    @router.get("/telemetry/events")
+    def telemetry_events(
+        limit: int = Query(100, ge=1, le=1000),
+        user: SupabaseUser = Depends(require_supabase_user),
+    ):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT run_id, tool, stage, event, design_name, ingested_at
+                    FROM ingestion.telemetry_events
+                    WHERE user_id = %s
+                    ORDER BY ingested_at DESC LIMIT %s
+                    """,
+                    (user.id, limit),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+        return [
+            {"run_id": r[0], "tool": r[1], "stage": r[2], "event": r[3],
+             "design_name": r[4], "recorded_at": r[5].isoformat() if r[5] else None}
+            for r in rows
+        ]
+
+    @router.get("/telemetry/export")
+    def telemetry_export(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"telemetry_events": [], "failure_atlas_entries": [], "note": "use gli-flow telemetry export locally"}
+
+    @router.get("/telemetry/replay")
+    def telemetry_replay(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"replays": []}
+
+    # -----------------------------------------------------------------
+    # /analytics/product  — install / first-run funnel (shaped stub)
+    # -----------------------------------------------------------------
+    @router.get("/analytics/product")
+    def analytics_product(user: SupabaseUser = Depends(require_supabase_user)):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(DISTINCT run_id), "
+                    "COUNT(DISTINCT run_id) FILTER (WHERE event='run_completed') "
+                    "FROM ingestion.telemetry_events WHERE user_id = %s",
+                    (user.id,),
+                )
+                total_runs, completed = cur.fetchone()
+        finally:
+            conn.close()
+        total_runs = int(total_runs or 0)
+        completed = int(completed or 0)
+        failed = max(0, total_runs - completed)
+        rate = round(100 * completed / total_runs) if total_runs else 0
+        return {
+            "install": {"success": total_runs, "failures": 0, "rate": 100 if total_runs else 0},
+            "first_run": {"success": completed, "failures": failed, "rate": rate},
+            "unique_sessions": total_runs,
+            "dashboard_usage": 0,
+        }
+
+    @router.get("/analytics/coverage")
+    def analytics_coverage(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"covered": 0, "total": 0, "coverage_pct": 0, "gaps": []}
+
+    # -----------------------------------------------------------------
+    # Reliability / provenance / atlas / community / resolutions /
+    # feedback / beta / journey / ai / knowledge — shaped empty stubs so
+    # the pages render "no data yet" instead of crashing.
+    # -----------------------------------------------------------------
+    @router.get("/reliability/health")
+    def reliability_health(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"status": "ok", "score": None, "checks": []}
+
+    @router.get("/reliability/summary")
+    def reliability_summary(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"score": None, "runs": 0, "issues": []}
+
+    @router.get("/provenance/graph")
+    def provenance_graph(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"nodes": [], "edges": []}
+
+    @router.get("/provenance/manifests")
+    def provenance_manifests(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/atlas/metrics")
+    def atlas_metrics(user: SupabaseUser = Depends(require_supabase_user)):
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    "SELECT COUNT(*), COUNT(DISTINCT failure_type) "
+                    "FROM ingestion.failure_atlas_events WHERE user_id = %s",
+                    (user.id,),
+                )
+                total, types = cur.fetchone()
+        finally:
+            conn.close()
+        return {"total_entries": int(total or 0), "unique_failure_types": int(types or 0),
+                "patterns": [], "most_viewed": [], "most_requested_missing": []}
+
+    @router.get("/community/stats")
+    def community_stats(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"escalations": 0, "resolved": 0, "open": 0}
+
+    @router.get("/community/escalations")
+    def community_escalations(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/community/knowledge-gaps")
+    def community_gaps(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/community/unknown-dataset")
+    def community_unknown(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/resolutions/summary")
+    def resolutions_summary(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"total": 0, "resolved": 0, "unresolved": 0}
+
+    @router.get("/resolutions/patterns")
+    def resolutions_patterns(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/resolutions/metrics")
+    def resolutions_metrics(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"patterns": 0, "confidence": None}
+
+    @router.get("/resolutions/top-resolved")
+    def resolutions_top_resolved(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/resolutions/top-unresolved")
+    def resolutions_top_unresolved(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/feedback")
+    def feedback_list(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"results": []}
+
+    @router.get("/feedback/stats")
+    def feedback_stats(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"total": 0, "open": 0, "resolved": 0}
+
+    @router.get("/beta/dashboard")
+    def beta_dashboard(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"users": [], "system": {}, "atlas": {}, "feedback": {}, "issues": [], "resolutions": {}}
+
+    @router.get("/beta/report")
+    def beta_report(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"summary": {}, "sections": []}
+
+    @router.get("/journey/report")
+    def journey_report(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    @router.get("/ai/health")
+    def ai_health(user: SupabaseUser = Depends(require_supabase_user)):
+        return {"is_ready": False, "provider": None, "reason": "AI investigation not enabled in cloud pilot"}
+
+    @router.get("/ai/feedback")
+    def ai_feedback(user: SupabaseUser = Depends(require_supabase_user)):
+        return []
+
+    # -----------------------------------------------------------------
+    # Catch-all: any other GET under /api/v1/legacy that we haven't
+    # explicitly handled returns an empty list, so no page 404-crashes.
+    # -----------------------------------------------------------------
+    @router.get("/{rest:path}")
+    def legacy_catch_all(rest: str, user: SupabaseUser = Depends(require_supabase_user)):
+        logger.info("Unhandled legacy GET /%s -> empty []", rest)
+        return []
+
     return router
