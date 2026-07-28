@@ -50,12 +50,16 @@ class CloudIngestionServer:
             description="Per-user telemetry ingestion with Bearer-token auth",
         )
 
+        # CORS: we authenticate via Authorization headers, not cookies, so
+        # credentials stay off — that lets us use the wildcard origin from
+        # config (which the browser rejects when credentials=True).
         app.add_middleware(
             CORSMiddleware,
             allow_origins=self.config.cors.allowed_origins,
-            allow_credentials=True,
+            allow_credentials=False,
             allow_methods=["*"],
             allow_headers=["*"],
+            expose_headers=["*"],
         )
 
         auth_dep = self._auth_dep
