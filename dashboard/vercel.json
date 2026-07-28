@@ -6,6 +6,7 @@
   "rewrites": [
     { "source": "/cli/device", "destination": "/index.html" },
     { "source": "/tokens", "destination": "/index.html" },
+    { "source": "/legacy", "destination": "/index.html" },
     { "source": "/settings/:path*", "destination": "/index.html" },
     { "source": "/(.*)", "destination": "/index.html" }
   ]

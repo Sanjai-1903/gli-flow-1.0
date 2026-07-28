@@ -348,4 +348,111 @@ def build_router(config: CloudIngestionConfig) -> APIRouter:
             conn.close()
         return {"status": "revoked"}
 
+    # ---------- Runs (per-user summary for the dashboard) ----------
+
+    @router.get("/api/v1/runs")
+    def runs_list(
+        user: SupabaseUser = Depends(require_supabase_user),
+        limit: int = 50,
+    ):
+        """Return the caller's most recent runs, one row per run_id.
+
+        Aggregates from ingestion.telemetry_events. For each run we surface:
+          - run_id, design_name, first/last event timestamps
+          - stages_completed (count of stage_completed events)
+          - qor_score / wns / cell_count if present in the SUMMARY row's metrics
+          - a boolean run_completed if we've seen the SUMMARY row
+        """
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT
+                        run_id,
+                        MAX(design_name) FILTER (WHERE design_name IS NOT NULL) AS design_name,
+                        COUNT(*) FILTER (WHERE event = 'stage_completed') AS stages_completed,
+                        BOOL_OR(event = 'run_completed') AS run_completed,
+                        MIN(ingested_at) AS first_seen,
+                        MAX(ingested_at) AS last_seen,
+                        (
+                            SELECT metrics FROM ingestion.telemetry_events te2
+                            WHERE te2.run_id = te.run_id
+                              AND te2.user_id = te.user_id
+                              AND te2.stage = 'SUMMARY'
+                            ORDER BY te2.ingested_at DESC LIMIT 1
+                        ) AS summary_metrics
+                    FROM ingestion.telemetry_events te
+                    WHERE user_id = %s
+                    GROUP BY run_id, user_id
+                    ORDER BY MAX(ingested_at) DESC
+                    LIMIT %s
+                    """,
+                    (user.id, min(max(limit, 1), 500)),
+                )
+                rows = cur.fetchall()
+        finally:
+            conn.close()
+
+        out = []
+        for r in rows:
+            summary = r[6] or {}
+            out.append({
+                "run_id": r[0],
+                "design_name": r[1] or "unknown",
+                "stages_completed": r[2],
+                "run_completed": bool(r[3]),
+                "first_seen": r[4].isoformat() if r[4] else None,
+                "last_seen": r[5].isoformat() if r[5] else None,
+                "qor_score": summary.get("qor_score"),
+                "wns": summary.get("wns"),
+                "cell_count": summary.get("cell_count"),
+                "runtime_sec": summary.get("runtime_sec"),
+            })
+        return {"runs": out, "count": len(out)}
+
+    @router.get("/api/v1/runs/{run_id}")
+    def run_detail(
+        run_id: str,
+        user: SupabaseUser = Depends(require_supabase_user),
+    ):
+        """Return every telemetry event for one run, most recent first."""
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            with conn.cursor() as cur:
+                cur.execute(
+                    """
+                    SELECT tool, stage, event, design_name, metrics,
+                           recorded_at, ingested_at
+                    FROM ingestion.telemetry_events
+                    WHERE user_id = %s AND run_id = %s
+                    ORDER BY ingested_at DESC
+                    """,
+                    (user.id, run_id),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    raise HTTPException(status_code=404, detail="Run not found")
+        finally:
+            conn.close()
+
+        return {
+            "run_id": run_id,
+            "events": [
+                {
+                    "tool": r[0],
+                    "stage": r[1],
+                    "event": r[2],
+                    "design_name": r[3],
+                    "metrics": r[4],
+                    "recorded_at": r[5].isoformat() if r[5] else None,
+                    "ingested_at": r[6].isoformat() if r[6] else None,
+                }
+                for r in rows
+            ],
+            "count": len(rows),
+        }
+
     return router
