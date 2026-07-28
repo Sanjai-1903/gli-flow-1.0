@@ -19,6 +19,7 @@ from typing import Optional
 
 from fastapi import FastAPI, Request, HTTPException, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from cloud_ingestion.config import CloudIngestionConfig
 from cloud_ingestion.database import IngestionDatabase
@@ -165,6 +166,17 @@ class CloudIngestionServer:
 
         # Device-flow login + CLI token management (Supabase-JWT authed)
         app.include_router(build_cli_router(self.config))
+
+        # Catch-all so unhandled exceptions still pass through CORS. Without
+        # this, browsers see an "access-control-allow-origin missing" error
+        # instead of the actual 500 detail.
+        @app.exception_handler(Exception)
+        async def _catch_all(request: Request, exc: Exception):
+            logger.exception("Unhandled server error on %s: %s", request.url.path, exc)
+            return JSONResponse(
+                status_code=500,
+                content={"detail": f"{type(exc).__name__}: {exc}"[:500]},
+            )
 
         return app
 
