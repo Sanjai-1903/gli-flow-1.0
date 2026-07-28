@@ -1,7 +1,6 @@
 // Admin console — visible only to master users (is_admin).
-// Two tabs: Users (everyone + their run counts) and All Runs (every run
-// across all users). Non-admins hitting /admin get a 403 from the server
-// and see an access-denied message.
+// Tabs: Users (everyone + run counts) and All Runs (every run, any user).
+// Clicking a run opens a detail drawer with the full stage/metric breakdown.
 
 import { useEffect, useState } from 'react'
 import { INGEST_URL, authHeaders } from './lib/supabase'
@@ -18,14 +17,107 @@ function fmt(iso) {
   if (!iso) return '—'
   try { return new Date(iso).toLocaleString() } catch { return iso }
 }
+function num(v, d = 2) {
+  if (v === null || v === undefined || v === '') return '—'
+  const n = Number(v); return Number.isNaN(n) ? String(v) : n.toFixed(d)
+}
+
+function RunDetailDrawer({ run, onClose }) {
+  const [detail, setDetail] = useState(null)
+  const [err, setErr] = useState('')
+
+  useEffect(() => {
+    setDetail(null); setErr('')
+    api(`/api/v1/admin/runs/${encodeURIComponent(run.run_id)}?owner_id=${encodeURIComponent(run.user_id)}`)
+      .then(setDetail)
+      .catch((e) => setErr(String(e)))
+  }, [run])
+
+  const m = detail?.summary_metrics || {}
+
+  return (
+    <div className="fixed inset-0 z-50 flex justify-end" onClick={onClose}>
+      <div className="absolute inset-0 bg-black/50" />
+      <div
+        className="relative w-full max-w-2xl bg-slate-950 border-l border-slate-800 h-full overflow-y-auto"
+        onClick={(e) => e.stopPropagation()}
+      >
+        <div className="sticky top-0 bg-slate-900 border-b border-slate-800 px-6 py-4 flex items-center justify-between">
+          <div>
+            <div className="font-mono text-xs text-slate-400">{run.run_id}</div>
+            <div className="text-sm text-slate-200 mt-0.5">
+              {run.user_name || '—'} <span className="text-slate-500">({run.user_email})</span>
+            </div>
+          </div>
+          <button onClick={onClose} className="text-slate-400 hover:text-white text-lg">✕</button>
+        </div>
+
+        <div className="p-6">
+          {err && <div className="text-red-400 text-sm mb-4">{err}</div>}
+          {!detail && !err && <div className="text-slate-500">Loading run…</div>}
+
+          {detail && (
+            <>
+              {/* Summary cards */}
+              <div className="grid grid-cols-3 gap-3 mb-6">
+                {[
+                  ['Design', run.design_name],
+                  ['Status', run.completed ? 'Completed' : 'Running'],
+                  ['Stages', run.stages_completed],
+                  ['QoR score', num(m.qor_score, 3)],
+                  ['WNS', num(m.wns, 3)],
+                  ['Cell count', m.cell_count ?? '—'],
+                  ['Utilization', m.utilization ? `${num(m.utilization, 1)}%` : '—'],
+                  ['Runtime', m.runtime_sec ? `${num(m.runtime_sec, 0)}s` : '—'],
+                  ['Tapeout', m.tapeout_ready ? 'Ready' : '—'],
+                ].map(([k, v]) => (
+                  <div key={k} className="bg-slate-900 border border-slate-800 rounded p-3">
+                    <div className="text-[10px] uppercase text-slate-500">{k}</div>
+                    <div className="text-sm text-slate-100 mt-1">{v ?? '—'}</div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Event / stage timeline */}
+              <div className="text-xs uppercase text-slate-500 mb-2">
+                Stages &amp; events ({detail.count})
+              </div>
+              <div className="border border-slate-800 rounded overflow-hidden">
+                <table className="w-full text-sm">
+                  <thead className="bg-slate-900 text-slate-400 text-xs">
+                    <tr>
+                      <th className="py-2 px-3 text-left">Stage</th>
+                      <th className="py-2 px-3 text-left">Event</th>
+                      <th className="py-2 px-3 text-left">When</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {detail.events.map((e, i) => (
+                      <tr key={i} className="border-t border-slate-800">
+                        <td className="py-1.5 px-3 text-slate-200">{e.stage}</td>
+                        <td className="py-1.5 px-3 text-slate-400">{e.event}</td>
+                        <td className="py-1.5 px-3 text-slate-500 text-xs">{fmt(e.ingested_at)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
 
 export default function AdminPage() {
   const profile = useProfile()
-  const [tab, setTab] = useState('users')
+  const [tab, setTab] = useState('runs')
   const [users, setUsers] = useState([])
   const [runs, setRuns] = useState([])
   const [loading, setLoading] = useState(true)
   const [err, setErr] = useState('')
+  const [selectedRun, setSelectedRun] = useState(null)
 
   const load = async () => {
     setLoading(true); setErr('')
@@ -61,16 +153,17 @@ export default function AdminPage() {
     <div className="min-h-screen bg-slate-950 text-slate-100">
       <div className="border-b border-slate-800 bg-slate-900/50">
         <div className="max-w-6xl mx-auto px-6 py-3 flex items-center justify-between">
-          <div className="font-semibold">GLI Flow — Admin</div>
+          <div className="font-semibold flex items-center gap-2">
+            <span className="text-amber-400">●</span> GLI Flow — Admin Console
+          </div>
           <div className="flex items-center gap-4 text-sm">
-            <a href="/" className="text-slate-300 hover:text-white">Dashboard</a>
+            <a href="/" className="text-slate-300 hover:text-white">← Dashboard</a>
             <button onClick={load} className="text-slate-400 hover:text-white">Refresh</button>
           </div>
         </div>
       </div>
 
       <div className="max-w-6xl mx-auto px-6 py-8">
-        {/* Summary */}
         <div className="grid grid-cols-3 gap-4 mb-6">
           <div className="bg-slate-900 border border-slate-800 rounded-lg p-4">
             <div className="text-xs text-slate-400">Users</div>
@@ -86,23 +179,58 @@ export default function AdminPage() {
           </div>
         </div>
 
-        {/* Tabs */}
         <div className="flex gap-2 mb-4">
-          {['users', 'runs'].map((t) => (
+          {['runs', 'users'].map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-4 py-1.5 rounded text-sm ${tab === t ? 'bg-blue-600 text-white' : 'bg-slate-900 text-slate-400 hover:text-white'}`}
             >
-              {t === 'users' ? 'Users' : 'All Runs'}
+              {t === 'runs' ? 'All Runs' : 'Users'}
             </button>
           ))}
         </div>
 
-        {err && (
-          <div className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded p-3 mb-4">{err}</div>
-        )}
+        {err && <div className="text-sm text-red-400 bg-red-950/40 border border-red-900 rounded p-3 mb-4">{err}</div>}
         {loading && <div className="text-slate-500">Loading…</div>}
+
+        {!loading && tab === 'runs' && (
+          <div className="border border-slate-800 rounded overflow-hidden">
+            <table className="w-full text-sm">
+              <thead className="bg-slate-900 text-slate-400 text-xs uppercase">
+                <tr>
+                  <th className="py-2 px-3 text-left">Run ID</th>
+                  <th className="py-2 px-3 text-left">User</th>
+                  <th className="py-2 px-3 text-left">Design</th>
+                  <th className="py-2 px-3 text-left">Status</th>
+                  <th className="py-2 px-3 text-left">Stages</th>
+                  <th className="py-2 px-3 text-left">When</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs.map((r) => (
+                  <tr
+                    key={r.run_id}
+                    onClick={() => setSelectedRun(r)}
+                    className="border-t border-slate-800 hover:bg-slate-800/60 cursor-pointer"
+                  >
+                    <td className="py-2 px-3 font-mono text-xs text-blue-300">{r.run_id}</td>
+                    <td className="py-2 px-3">
+                      <div>{r.user_name || '—'}</div>
+                      <div className="text-xs text-slate-500">{r.user_email}</div>
+                    </td>
+                    <td className="py-2 px-3 text-slate-200">{r.design_name}</td>
+                    <td className={`py-2 px-3 ${r.completed ? 'text-green-400' : 'text-yellow-400'}`}>
+                      {r.completed ? '✓ completed' : '… running'}
+                    </td>
+                    <td className="py-2 px-3">{r.stages_completed}</td>
+                    <td className="py-2 px-3 text-slate-500 text-xs">{fmt(r.last_seen)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
 
         {!loading && tab === 'users' && (
           <div className="border border-slate-800 rounded overflow-hidden">
@@ -134,41 +262,9 @@ export default function AdminPage() {
             </table>
           </div>
         )}
-
-        {!loading && tab === 'runs' && (
-          <div className="border border-slate-800 rounded overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-900 text-slate-400 text-xs uppercase">
-                <tr>
-                  <th className="py-2 px-3 text-left">Run ID</th>
-                  <th className="py-2 px-3 text-left">User</th>
-                  <th className="py-2 px-3 text-left">Design</th>
-                  <th className="py-2 px-3 text-left">Status</th>
-                  <th className="py-2 px-3 text-left">Stages</th>
-                  <th className="py-2 px-3 text-left">When</th>
-                </tr>
-              </thead>
-              <tbody>
-                {runs.map((r) => (
-                  <tr key={r.run_id} className="border-t border-slate-800 hover:bg-slate-900/50">
-                    <td className="py-2 px-3 font-mono text-xs text-slate-300">{r.run_id}</td>
-                    <td className="py-2 px-3">
-                      <div>{r.user_name || '—'}</div>
-                      <div className="text-xs text-slate-500">{r.user_email}</div>
-                    </td>
-                    <td className="py-2 px-3 text-slate-200">{r.design_name}</td>
-                    <td className={`py-2 px-3 ${r.completed ? 'text-green-400' : 'text-yellow-400'}`}>
-                      {r.completed ? '✓ completed' : '… running'}
-                    </td>
-                    <td className="py-2 px-3">{r.stages_completed}</td>
-                    <td className="py-2 px-3 text-slate-500 text-xs">{fmt(r.last_seen)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        )}
       </div>
+
+      {selectedRun && <RunDetailDrawer run={selectedRun} onClose={() => setSelectedRun(null)} />}
     </div>
   )
 }

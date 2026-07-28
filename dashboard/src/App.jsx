@@ -40,6 +40,31 @@ import RunStar from "./components/RunStar"
 import { trackEvent } from "./lib/telemetry"
 import OnboardingCard from "./OnboardingCard.jsx"
 import AccountMenu from "./AccountMenu.jsx"
+import { useProfile } from "./ProfileGate.jsx"
+
+function AdminBanner() {
+  const profile = useProfile()
+  if (!profile || !profile.is_admin) return null
+  return (
+    <div className="bg-abyss-ink text-white rounded-lg p-4 flex items-center justify-between">
+      <div className="flex items-center gap-3">
+        <span className="text-amber-400 text-lg">●</span>
+        <div>
+          <div className="font-[Eczar] text-[15px]">Administrator access</div>
+          <div className="text-[11px] text-white/60 font-[Work_Sans]">
+            You can view every user's runs and drill into any run's full detail.
+          </div>
+        </div>
+      </div>
+      <a
+        href="/admin"
+        className="bg-meridian-gold text-abyss-ink text-[12px] font-medium px-4 py-2 rounded hover:brightness-95"
+      >
+        Open Admin Console →
+      </a>
+    </div>
+  )
+}
 
 const API_BASE = import.meta.env.VITE_API_URL || ""
 const POLL_MS = parseInt(import.meta.env.VITE_POLL_INTERVAL || "2000", 10)
@@ -519,6 +544,9 @@ function App() {
             <HelpPage />
           ) : (
           <>
+
+          {/* === ADMIN BANNER (admins only) === */}
+          <AdminBanner />
 
           {/* === ONBOARDING (CLI install + generate token) === */}
           <OnboardingCard />

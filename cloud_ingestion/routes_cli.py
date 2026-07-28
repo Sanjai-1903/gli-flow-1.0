@@ -524,6 +524,80 @@ def build_router(config: CloudIngestionConfig) -> APIRouter:
             ]
         }
 
+    @router.get("/api/v1/admin/runs/{run_id}")
+    def admin_run_detail(
+        run_id: str,
+        owner_id: str,
+        user: SupabaseUser = Depends(require_supabase_user),
+    ):
+        """Full detail of ANY user's run. Admin only.
+
+        owner_id is the user_id who owns the run (from the admin runs list),
+        so we can look it up without the caller's own user filter.
+        """
+        conn = _pg(config)
+        try:
+            _ensure_app_user(conn, user)
+            if not _is_admin(conn, user.id):
+                raise HTTPException(status_code=403, detail="Admin only")
+            with conn.cursor() as cur:
+                # Owner info
+                cur.execute(
+                    "SELECT email, full_name, display_name FROM app_users WHERE id = %s",
+                    (owner_id,),
+                )
+                owner = cur.fetchone()
+
+                # Summary metrics
+                cur.execute(
+                    """
+                    SELECT metrics FROM ingestion.telemetry_events
+                    WHERE user_id = %s AND run_id = %s AND stage = 'SUMMARY'
+                    ORDER BY ingested_at DESC LIMIT 1
+                    """,
+                    (owner_id, run_id),
+                )
+                srow = cur.fetchone()
+                summary = (srow[0] if srow else {}) or {}
+
+                # All events
+                cur.execute(
+                    """
+                    SELECT tool, stage, event, design_name, metrics,
+                           recorded_at, ingested_at
+                    FROM ingestion.telemetry_events
+                    WHERE user_id = %s AND run_id = %s
+                    ORDER BY ingested_at DESC
+                    """,
+                    (owner_id, run_id),
+                )
+                rows = cur.fetchall()
+                if not rows:
+                    raise HTTPException(status_code=404, detail="Run not found")
+        finally:
+            conn.close()
+
+        return {
+            "run_id": run_id,
+            "owner": {
+                "user_id": owner_id,
+                "email": owner[0] if owner else None,
+                "full_name": owner[1] if owner else None,
+                "display_name": owner[2] if owner else None,
+            },
+            "summary_metrics": summary,
+            "events": [
+                {
+                    "tool": r[0], "stage": r[1], "event": r[2],
+                    "design_name": r[3], "metrics": r[4],
+                    "recorded_at": r[5].isoformat() if r[5] else None,
+                    "ingested_at": r[6].isoformat() if r[6] else None,
+                }
+                for r in rows
+            ],
+            "count": len(rows),
+        }
+
     # ---------- Runs (per-user summary for the dashboard) ----------
 
     @router.get("/api/v1/runs")
