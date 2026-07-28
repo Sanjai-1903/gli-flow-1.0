@@ -25,6 +25,7 @@ from cloud_ingestion.config import CloudIngestionConfig
 from cloud_ingestion.database import IngestionDatabase
 from cloud_ingestion.auth import make_auth_dependency
 from cloud_ingestion.routes_cli import build_router as build_cli_router
+from cloud_ingestion.routes_legacy import build_router as build_legacy_router
 from cloud_ingestion.models import (
     UploadPayload,
     UploadResponse,
@@ -166,6 +167,11 @@ class CloudIngestionServer:
 
         # Device-flow login + CLI token management (Supabase-JWT authed)
         app.include_router(build_cli_router(self.config))
+
+        # Legacy dashboard endpoints (Supabase-JWT authed, per-user).
+        # Mounted under /api/v1/legacy/*, called from the dashboard via
+        # a global fetch wrapper that rewrites bare paths (`/runs`, etc.).
+        app.include_router(build_legacy_router(self.config))
 
         # Catch-all so unhandled exceptions still pass through CORS. Without
         # this, browsers see an "access-control-allow-origin missing" error
