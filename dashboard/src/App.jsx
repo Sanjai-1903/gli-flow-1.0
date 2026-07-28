@@ -38,6 +38,7 @@ import UserJourneyPage from "./UserJourneyPage"
 import BetaDashboardPage from "./BetaDashboardPage"
 import RunStar from "./components/RunStar"
 import { trackEvent } from "./lib/telemetry"
+import OnboardingCard from "./OnboardingCard.jsx"
 
 const API_BASE = import.meta.env.VITE_API_URL || ""
 const POLL_MS = parseInt(import.meta.env.VITE_POLL_INTERVAL || "2000", 10)
@@ -517,6 +518,9 @@ function App() {
             <HelpPage />
           ) : (
           <>
+
+          {/* === ONBOARDING (CLI install + generate token) === */}
+          <OnboardingCard />
 
           {/* === METRIC CARDS ROW === */}
           <div className="grid grid-cols-5 gap-4">
