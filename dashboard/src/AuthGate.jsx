@@ -15,6 +15,10 @@ function SignInScreen() {
       provider: 'google',
       options: {
         redirectTo: window.location.origin + window.location.pathname,
+        // Always show Google's account picker, so people with multiple
+        // Google accounts can choose which one to sign in with (instead of
+        // being silently signed in with whichever is currently active).
+        queryParams: { prompt: 'select_account' },
       },
     })
     if (error) {

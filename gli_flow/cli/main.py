@@ -492,12 +492,53 @@ def _ensure_dashboard_node_modules():
 
 
 def dashboard_command(args):
+    """Open the cloud dashboard in the browser.
+
+    The dashboard is a hosted web app (your runs sync to it automatically),
+    so there's nothing to run locally. If --local is passed we fall back to
+    the legacy self-hosted dashboard for developers who have the full repo.
+    """
     print_banner()
+
+    # Legacy local dashboard (developers only, needs the full repo + npm).
+    if getattr(args, "local", False):
+        return _dashboard_command_local(args)
+
+    # Cloud dashboard — just open the web URL.
+    try:
+        from gli_flow.cloud.auth import load_auth, DEFAULT_WEB_URL, NotLoggedInError
+        try:
+            web_url = load_auth().web_url or DEFAULT_WEB_URL
+        except NotLoggedInError:
+            web_url = os.environ.get("GLI_WEB_URL", DEFAULT_WEB_URL)
+    except Exception:
+        web_url = os.environ.get("GLI_WEB_URL", "https://gli-flow-1-0.vercel.app")
+
+    web_url = web_url.rstrip("/")
+    success(f"Opening your dashboard: {web_url}")
+    info("Sign in with the same account your CLI is logged in as to see your runs.")
+    try:
+        _open_browser(web_url)
+    except Exception:
+        info(f"If a browser didn't open, visit: {web_url}")
+    info("")
+    info("Tip: developers with the full repo can run the old local dashboard with:")
+    info("  gli-flow dashboard --local")
+
+
+def _dashboard_command_local(args):
     backend_host = "127.0.0.1"
     backend_port = int(os.environ.get("GLI_FLOW_BACKEND_PORT", "8000"))
     dashboard_port = int(os.environ.get("GLI_FLOW_DASHBOARD_PORT", "5173"))
     project_root = Path(__file__).resolve().parent.parent.parent
     dashboard_dir = project_root / "dashboard"
+
+    if not (project_root / "backend" / "server.py").exists():
+        error(
+            "Local dashboard is only available from a full repo checkout.\n"
+            "  Use the cloud dashboard instead: gli-flow dashboard (no --local)."
+        )
+        sys.exit(1)
 
     info("Starting backend server...")
     backend_proc = subprocess.Popen(
@@ -514,7 +555,6 @@ def dashboard_command(args):
         error(
             "Backend server failed to start within 30 seconds.\n"
             f"  Why: The API server at port {backend_port} did not respond to health checks.\n"
-            "  How GLI-FLOW will fix it: Check if the port is in use or if dependencies are missing.\n"
             "  User action required: Run 'gli-flow doctor' to check environment, then try again."
         )
         sys.exit(1)
@@ -525,12 +565,7 @@ def dashboard_command(args):
 
     if not args.backend_only:
         if not _ensure_dashboard_node_modules():
-            error(
-                "Dashboard dependencies could not be installed.\n"
-                "  Why: npm install failed in the dashboard directory.\n"
-                "  How GLI-FLOW will fix it: This indicates a network or npm issue.\n"
-                "  User action required: Run 'npm install' manually in the dashboard/ directory."
-            )
+            error("Dashboard dependencies could not be installed. Run 'npm install' in dashboard/.")
             sys.exit(1)
         dashboard_url = f"http://{backend_host}:{dashboard_port}"
         try:
@@ -2815,9 +2850,10 @@ def build_parser():
     config_parser._category = "Setup"
     config_parser.add_argument("--telemetry", choices=["on", "off"], default=None, help="Enable or disable telemetry")
 
-    dashboard_parser = subparsers.add_parser("dashboard", help="Start the GLI-FLOW dashboard", epilog=EXAMPLES["dashboard"])
-    dashboard_parser._category = "Experimental"
-    dashboard_parser.add_argument("--backend-only", action="store_true", help="Start backend only, skip frontend dev server")
+    dashboard_parser = subparsers.add_parser("dashboard", help="Open your cloud dashboard in the browser", epilog=EXAMPLES["dashboard"])
+    dashboard_parser._category = "Cloud"
+    dashboard_parser.add_argument("--local", action="store_true", help="Run the legacy self-hosted dashboard (developers, full repo only)")
+    dashboard_parser.add_argument("--backend-only", action="store_true", help="With --local: start backend only, skip frontend dev server")
 
     setup_parser = subparsers.add_parser("setup", help="Interactive first-time setup — configure PDK, tools, workspace", epilog=EXAMPLES["setup"])
     setup_parser._category = "Setup"

@@ -74,6 +74,22 @@ export default function DeviceApprovalPage() {
         <h1 className="text-xl font-semibold text-white mb-1">Approve CLI sign-in</h1>
         <p className="text-sm text-slate-400 mb-6">
           Signed in as <span className="text-slate-200">{session.user.email}</span>
+          {' '}
+          <button
+            onClick={async () => {
+              await supabase.auth.signOut()
+              await supabase.auth.signInWithOAuth({
+                provider: 'google',
+                options: {
+                  redirectTo: window.location.href,
+                  queryParams: { prompt: 'select_account' },
+                },
+              })
+            }}
+            className="text-blue-400 hover:text-blue-300 underline ml-1"
+          >
+            Not you? Switch account
+          </button>
         </p>
 
         <p className="text-sm text-slate-300 mb-2">
