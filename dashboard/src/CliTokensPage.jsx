@@ -6,6 +6,21 @@ import { useEffect, useState } from 'react'
 import { supabase, INGEST_URL, authHeaders } from './lib/supabase'
 import { useSession } from './AuthGate'
 
+function CopyLine({ text }) {
+  const [copied, setCopied] = useState(false)
+  const copy = async () => {
+    try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1200) } catch {}
+  }
+  return (
+    <div className="relative group">
+      <pre className="bg-slate-950 border border-slate-800 rounded px-3 py-2 text-xs text-slate-100 overflow-x-auto font-mono whitespace-pre-wrap">{text}</pre>
+      <button onClick={copy} className="absolute top-1.5 right-1.5 text-[10px] bg-slate-800 hover:bg-slate-700 text-slate-200 rounded px-2 py-0.5">
+        {copied ? 'Copied' : 'Copy'}
+      </button>
+    </div>
+  )
+}
+
 async function api(path, opts = {}) {
   const headers = { 'Content-Type': 'application/json', ...(await authHeaders()), ...(opts.headers || {}) }
   const resp = await fetch(`${INGEST_URL}${path}`, { ...opts, headers })
@@ -99,18 +114,49 @@ function CreateTokenModal({ onCreated, onClose }) {
           </>
         ) : (
           <>
-            <h2 className="text-lg font-semibold text-white mb-2">Your new token</h2>
-            <p className="text-sm text-yellow-400 mb-4">
-              Copy this token now — it will not be shown again.
+            <h2 className="text-lg font-semibold text-white mb-1">Your new token</h2>
+            <p className="text-sm text-yellow-400 mb-3">
+              Copy it now — for security it will never be shown again.
             </p>
-            <div className="bg-slate-950 border border-slate-800 rounded p-3 font-mono text-sm text-slate-100 break-all mb-3">
+            <div className="bg-slate-950 border border-slate-800 rounded p-3 font-mono text-sm text-slate-100 break-all mb-2">
               {freshToken.access_token}
             </div>
-            <div className="text-xs text-slate-500 mb-4">
-              On your machine, run: <code className="text-slate-300">gli-flow login --token &lt;paste&gt;</code>
-            </div>
-            <div className="flex gap-2 justify-end">
-              <button onClick={copy} className="px-4 py-2 bg-slate-800 text-slate-100 rounded hover:bg-slate-700">Copy</button>
+            <button onClick={copy} className="mb-4 px-3 py-1.5 bg-slate-800 text-slate-100 rounded hover:bg-slate-700 text-sm">
+              Copy token
+            </button>
+
+            <div className="text-sm text-slate-300 font-medium mb-2">Now connect it to your CLI:</div>
+            <ol className="text-xs text-slate-400 space-y-3 list-decimal pl-5 mb-4">
+              <li>
+                Open a terminal where you installed <code className="text-slate-200">gli-flow</code>.
+              </li>
+              <li>
+                Point the CLI at the server (one-time):
+                <div className="mt-1">
+                  <CopyLine text={`export GLI_INGEST_URL='${INGEST_URL}'`} />
+                </div>
+              </li>
+              <li>
+                Log in with this token:
+                <div className="mt-1">
+                  <CopyLine text={`gli-flow login --token ${freshToken.access_token}`} />
+                </div>
+              </li>
+              <li>
+                Confirm it worked — this should print your email:
+                <div className="mt-1">
+                  <CopyLine text={`gli-flow whoami`} />
+                </div>
+              </li>
+              <li>
+                Run a design — it auto-syncs to your account here:
+                <div className="mt-1">
+                  <CopyLine text={`gli-flow demo\ngli-flow run gli-demo/counter --mock`} />
+                </div>
+              </li>
+            </ol>
+
+            <div className="flex justify-end">
               <button onClick={onClose} className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-500">Done</button>
             </div>
           </>
@@ -177,6 +223,21 @@ export default function CliTokensPage() {
               + New token
             </button>
           </div>
+        </div>
+
+        <div className="bg-slate-900 border border-slate-800 rounded-lg p-4 mb-6 text-sm text-slate-300">
+          <div className="font-medium text-slate-100 mb-1">What is a CLI token?</div>
+          <p className="text-slate-400 text-[13px] leading-relaxed">
+            A token is a password-like key that links the <code className="text-slate-200">gli-flow</code> tool on your
+            computer to <span className="text-slate-200">this account</span>. You generate one here, paste it into the
+            CLI once with <code className="text-slate-200">gli-flow login --token …</code>, and from then on every design
+            you run automatically shows up under your account. Keep it private — anyone with your token can upload as you.
+            Lost it or shared it by mistake? Just revoke it below and make a new one.
+          </p>
+          <p className="text-slate-500 text-[12px] mt-2">
+            Tip: you don't strictly need a token — <code className="text-slate-300">gli-flow login</code> (no flag) opens
+            a browser to sign in. Tokens are for machines with no browser, or if you prefer copy-paste.
+          </p>
         </div>
 
         {loading && <div className="text-slate-500">Loading…</div>}
