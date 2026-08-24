@@ -161,15 +161,20 @@ export default function OnboardingCard() {
   const email = session?.user?.email || ''
   const webOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
-  const installSnippet = `git clone https://github.com/Sanjai-1903/gli-flow-1.0
-cd gli-flow-1.0
-python3 -m venv .venv && source .venv/bin/activate
-pip install -e .`
+  // No clone, no venv, works on Windows/Mac/Linux (needs Python 3.9+).
+  const installSnippet = `pip install "git+https://github.com/Sanjai-1903/gli-flow-1.0.git"`
 
-  const loginSnippet = `export GLI_INGEST_URL='${INGEST_URL}'
+  const loginSnippetUnix = `export GLI_INGEST_URL='${INGEST_URL}'
 export GLI_WEB_URL='${webOrigin}'
 gli-flow login
-gli-flow run examples/counter --mock`
+gli-flow demo
+gli-flow run gli-demo/counter --mock`
+
+  const loginSnippetWin = `$env:GLI_INGEST_URL = "${INGEST_URL}"
+$env:GLI_WEB_URL     = "${webOrigin}"
+gli-flow login
+gli-flow demo
+gli-flow run gli-demo/counter --mock`
 
   return (
     <>
@@ -192,14 +197,26 @@ gli-flow run examples/counter --mock`
           Signed in as {email || 'your account'}. Install the CLI, log in, and any run you do gets synced here automatically.
         </p>
 
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div className="space-y-4">
           <div>
-            <div className="text-[12px] font-semibold text-abyss-ink mb-2">1. Install</div>
+            <div className="text-[12px] font-semibold text-abyss-ink mb-2">
+              1. Install (needs Python 3.9+ — no clone, no Linux/WSL required)
+            </div>
             <CopyBox text={installSnippet} />
+            <div className="text-[11px] text-[#6B7280] mt-1">
+              On Windows use <code>py -m pip install …</code> if <code>pip</code> isn't found.
+              You do <b>not</b> need a virtual environment.
+            </div>
           </div>
-          <div>
-            <div className="text-[12px] font-semibold text-abyss-ink mb-2">2. Login and run</div>
-            <CopyBox text={loginSnippet} />
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+            <div>
+              <div className="text-[12px] font-semibold text-abyss-ink mb-2">2. Login &amp; run — macOS / Linux</div>
+              <CopyBox text={loginSnippetUnix} />
+            </div>
+            <div>
+              <div className="text-[12px] font-semibold text-abyss-ink mb-2">2. Login &amp; run — Windows (PowerShell)</div>
+              <CopyBox text={loginSnippetWin} />
+            </div>
           </div>
         </div>
 

@@ -44,13 +44,10 @@ dev = ["pytest>=7.0.0", "pytest-cov>=4.0.0", "ruff>=0.1.0"]
 gli-flow = "gli_flow.cli.main:main"
 
 [tool.setuptools]
-# Explicit package discovery so we don't accidentally ship the whole tree.
-packages = { find = { include = ["gli_flow*", "failure_atlas*", "provenance*"] } }
+# Explicit package discovery so we don't accidentally ship the whole tree
+# (examples/mini_mac contains a huge vendored RTL tree with symlink loops).
+packages = { find = { include = ["gli_flow*", "failure_atlas*", "provenance*"], exclude = ["examples*", "dashboard*", "backend*", "docs*", "tests*", "scripts*", "cloud_ingestion*", "*.mini_mac*"] } }
 
 [tool.setuptools.package-data]
 gli_flow = ["py.typed", "templates/**/*", "pdk/**/*.yaml", "pdk/**/*.json"]
 failure_atlas = ["**/*.json"]
-
-# Bundle the example designs so `gli-flow run examples/counter --mock`
-# works immediately after `pip install gli-flow`.
-"gli_flow.examples" = ["**/*"]
