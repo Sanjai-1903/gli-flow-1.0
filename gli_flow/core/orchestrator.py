@@ -1455,18 +1455,24 @@ class FlowOrchestrator:
             self._write_telemetry(qor_result, self._corner_results)
             self._write_manifest(qor_result)
 
-            from gli_flow.telemetry.uploader import auto_upload_run
-            auto_upload_run(self.run_id, self.db_path)
+            # Legacy self-hosted upload path (posts to GLI_SERVER_URL, default
+            # localhost:8100). Only run it when the user has explicitly opted
+            # into a legacy server; otherwise the modern cloud sync hook
+            # (_notify_cloud_sync at run end) is the authoritative uploader and
+            # these would just spam "connection refused".
+            if os.environ.get("GLI_SERVER_URL"):
+                from gli_flow.telemetry.uploader import auto_upload_run
+                auto_upload_run(self.run_id, self.db_path)
 
-            from gli_flow.telemetry.failure_atlas_uploader import FailureAtlasUploader
-            fa_uploader = FailureAtlasUploader(db_path=self.db_path)
-            repo = FailureAtlasRepository(db_path=self.db_path)
-            try:
-                for entry in repo.get_entries_for_run(self.run_id):
-                    fa_uploader.upload_entry_queued(entry, run_id=self.run_id)
-                fa_uploader.process_queue()
-            finally:
-                repo.close()
+                from gli_flow.telemetry.failure_atlas_uploader import FailureAtlasUploader
+                fa_uploader = FailureAtlasUploader(db_path=self.db_path)
+                repo = FailureAtlasRepository(db_path=self.db_path)
+                try:
+                    for entry in repo.get_entries_for_run(self.run_id):
+                        fa_uploader.upload_entry_queued(entry, run_id=self.run_id)
+                    fa_uploader.process_queue()
+                finally:
+                    repo.close()
 
             results_dir = self.run_dir / "results"
             if results_dir.exists():
