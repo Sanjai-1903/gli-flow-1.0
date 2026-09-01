@@ -162,7 +162,10 @@ export default function OnboardingCard() {
   const webOrigin = typeof window !== 'undefined' ? window.location.origin : ''
 
   // No clone, no venv, works on Windows/Mac/Linux (needs Python 3.9+).
-  const installSnippet = `pip install "git+https://github.com/Sanjai-1903/gli-flow-1.0.git"`
+  // Use `python3 -m pip` / `py -m pip` so it works even when bare `pip`
+  // isn't on PATH (very common).
+  const installSnippetUnix = `python3 -m pip install "git+https://github.com/Sanjai-1903/gli-flow-1.0.git"`
+  const installSnippetWin = `py -m pip install "git+https://github.com/Sanjai-1903/gli-flow-1.0.git"`
 
   const loginSnippetUnix = `export GLI_INGEST_URL='${INGEST_URL}'
 export GLI_WEB_URL='${webOrigin}'
@@ -202,10 +205,19 @@ gli-flow run gli-demo/counter --mock`
             <div className="text-[12px] font-semibold text-abyss-ink mb-2">
               1. Install (needs Python 3.9+ — no clone, no Linux/WSL required)
             </div>
-            <CopyBox text={installSnippet} />
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-3">
+              <div>
+                <div className="text-[11px] text-[#6B7280] mb-1">macOS / Linux</div>
+                <CopyBox text={installSnippetUnix} />
+              </div>
+              <div>
+                <div className="text-[11px] text-[#6B7280] mb-1">Windows (PowerShell)</div>
+                <CopyBox text={installSnippetWin} />
+              </div>
+            </div>
             <div className="text-[11px] text-[#6B7280] mt-1">
-              On Windows use <code>py -m pip install …</code> if <code>pip</code> isn't found.
-              You do <b>not</b> need a virtual environment.
+              No virtual environment needed. If it says pip is missing, run{' '}
+              <code>python3 -m ensurepip --upgrade</code> first.
             </div>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">

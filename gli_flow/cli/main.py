@@ -1375,14 +1375,34 @@ def init_command(args):
         info(f"Auto-detected from RTL: top_module={manifest['top_module']}, "
              f"rtl_files={len(manifest['rtl_files'])} file(s)")
 
+    # Explicit overrides
+    if getattr(args, "top", None):
+        manifest["top_module"] = args.top
+    if getattr(args, "clock_port", None):
+        manifest["clock_port"] = args.clock_port
+    if getattr(args, "clock_period", None) is not None:
+        manifest["clock_period_ns"] = args.clock_period
+
+    # Constraints (.sdc)
+    if getattr(args, "sdc", None):
+        sdc_path = Path(args.sdc)
+        if not sdc_path.exists():
+            error(f"Constraints file not found: {args.sdc}")
+            sys.exit(1)
+        manifest["constraints"] = [str(sdc_path)]
+        info(f"Using constraints: {sdc_path}")
+
     manifest_path = Path(design_name) / "gli_manifest.yaml"
     manifest_path.parent.mkdir(parents=True, exist_ok=True)
     import yaml
     with open(manifest_path, "w") as f:
         yaml.dump(manifest, f, default_flow_style=False)
     success(f"Created {manifest_path}")
-    print_next_step([f"Place your Verilog files in {design_name}/rtl/",
-                     f"gli-flow run {design_name} --mock"])
+    next_steps = []
+    if not (args.rtl or args.rtl_dir):
+        next_steps.append(f"Place your Verilog files in {design_name}/rtl/")
+    next_steps.append(f"gli-flow run {design_name} --mock")
+    print_next_step(next_steps)
 
 
 def quickstart_command(args):
@@ -2717,6 +2737,14 @@ def build_parser():
                               help="Path to RTL directory to auto-detect top module, ports, and files")
     init_parser.add_argument("--rtl", type=str, default=None,
                               help="Path to a single RTL file to auto-detect top module and ports")
+    init_parser.add_argument("--sdc", "--constraints", type=str, default=None, dest="sdc",
+                              help="Path to a timing constraints (.sdc) file")
+    init_parser.add_argument("--top", type=str, default=None,
+                              help="Top module name (overrides auto-detection)")
+    init_parser.add_argument("--clock-port", type=str, default=None,
+                              help="Clock port name (default: clk)")
+    init_parser.add_argument("--clock-period", type=float, default=None,
+                              help="Clock period in ns (default: 10.0)")
 
     quickstart_parser = subparsers.add_parser("quickstart", help="Interactive setup wizard for new designs", epilog=EXAMPLES["quickstart"])
     quickstart_parser._category = "Setup"
