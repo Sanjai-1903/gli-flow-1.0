@@ -1,0 +1,32 @@
+#!/usr/bin/env bash
+# gli-flow-docker — run gli-flow inside the Docker image, cross-platform.
+#
+# It mounts:
+#   - your current folder  -> /work        (so the container sees your RTL)
+#   - ~/.gli-flow          -> /root/.gli-flow  (so your login token + sync
+#                                               state carry into the container)
+#
+# and forwards the server URLs so uploads go to your account.
+#
+# Usage (from the folder that has your design / RTL):
+#   ./gli-flow-docker login
+#   ./gli-flow-docker init mux --rtl mux.v --sdc mux.sdc
+#   ./gli-flow-docker run mux            # REAL run (no --mock)
+#
+# First run pulls the image (~4-6 GB), once.
+
+set -euo pipefail
+
+IMAGE="${GLI_FLOW_IMAGE:-sanjaimurugan/gli-flow:latest}"
+INGEST_URL="${GLI_INGEST_URL:-https://gli-flow-1-0-ingest.onrender.com}"
+WEB_URL="${GLI_WEB_URL:-https://gli-flow-1-0.vercel.app}"
+
+# Ensure the host auth dir exists so the mount works and login persists.
+mkdir -p "${HOME}/.gli-flow"
+
+exec docker run --rm -it \
+  -v "$(pwd)":/work \
+  -v "${HOME}/.gli-flow":/root/.gli-flow \
+  -e GLI_INGEST_URL="${INGEST_URL}" \
+  -e GLI_WEB_URL="${WEB_URL}" \
+  "${IMAGE}" "$@"

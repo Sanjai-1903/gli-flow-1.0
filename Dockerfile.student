@@ -1,0 +1,60 @@
+# GLI-FLOW student image — real RTL-to-GDS runs, cross-platform via Docker.
+#
+# Contains the full open-source EDA toolchain (yosys, OpenROAD, magic,
+# klayout, netgen), gli-flow itself, and the sky130 PDK + ORFS baked in, so
+# a student can run a REAL flow on their own RTL without installing any of
+# it natively. They install Docker Desktop, pull this image, and run.
+#
+# Build (maintainer, one time):
+#   docker build -f Dockerfile.student -t sanjaimurugan/gli-flow:latest .
+#   docker push sanjaimurugan/gli-flow:latest
+#
+# The image is large (~4-6 GB) because it carries the PDK + ORFS. That's
+# the nature of real EDA tooling — the student downloads it once.
+
+FROM ubuntu:22.04
+
+ARG DEBIAN_FRONTEND=noninteractive
+ENV PDK_ROOT=/root/.gli-flow/pdk
+ENV PATH="/usr/local/bin:${PATH}"
+
+# --- 1. System + EDA tools -------------------------------------------------
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl wget ca-certificates build-essential cmake \
+    python3 python3-pip python3-venv python3-dev \
+    tcl tcl-dev tk-dev libffi-dev libssl-dev libgomp1 libtcl8.6 \
+    yosys klayout netgen-lvs magic \
+ && rm -rf /var/lib/apt/lists/*
+
+# OpenROAD (prebuilt .deb)
+RUN wget -q \
+    https://github.com/Precision-Innovations/OpenROAD/releases/download/2024-12-14/openroad_2.0-17598-ga008522d8_amd64-ubuntu-22.04.deb \
+    -O /tmp/openroad.deb \
+ && apt-get update \
+ && apt-get install -y --no-install-recommends /tmp/openroad.deb \
+ && rm /tmp/openroad.deb \
+ && rm -rf /var/lib/apt/lists/*
+
+# --- 2. gli-flow ------------------------------------------------------------
+WORKDIR /opt/gli-flow
+COPY . /opt/gli-flow
+RUN pip3 install --no-cache-dir --break-system-packages -e . \
+ && pip3 install --no-cache-dir --break-system-packages volare
+
+# --- 3. ORFS + sky130 PDK (baked in) ---------------------------------------
+# Non-interactive install of the OpenROAD-flow-scripts + PDK into
+# /root/.gli-flow so real runs work out of the box.
+RUN gli-flow --non-interactive install --pdk sky130 || \
+    echo "WARNING: gli-flow install did not fully complete at build time; \
+run 'gli-flow install' inside the container if a real run reports missing ORFS/PDK."
+
+# Sanity: tools resolve
+RUN yosys -V && openroad -version | head -1 || true
+
+# --- 4. Student work area ---------------------------------------------------
+# Students mount their design folder here.
+WORKDIR /work
+
+# gli-flow is the entrypoint so `docker run <img> run mydesign` works.
+ENTRYPOINT ["gli-flow"]
+CMD ["--help"]
